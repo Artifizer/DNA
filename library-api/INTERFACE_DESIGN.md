@@ -220,7 +220,7 @@ Go's type system is weaker here (any string literal is assignable to a named str
 
 *Rationale:* strings force every consumer to parse and validate independently. They also allow silent drift when casing changes, provide no useful autocomplete, and make refactors harder to find reliably.
 
-## 4. Typed Identifiers (Newtypes)
+## 5. Typed Identifiers (Newtypes)
 
 Never expose raw `String` / `uuid::Uuid` for domain IDs in public signatures. Wrap each in a distinct type so the compiler refuses to swap them (Rust API Guidelines: **C-NEWTYPE**).
 
@@ -255,7 +255,7 @@ Go still allows untyped string-literal assignment to a named `string` type, but 
 
 *Rationale:* zero runtime cost; the one real downside in Rust is needing `Deref<Target = str>` or helper accessors to interoperate with string-taking APIs. That boilerplate is worth the safety.
 
-## 5. Error Design
+## 6. Error Design
 
 An error type is part of the public contract, so design it as deliberately as the happy path. Rust API Guidelines call this out under **C-GOOD-ERR**: good error types are meaningful, implement `std::error::Error`, are `Send + Sync + 'static`, and carry useful information instead of opaque strings.
 
@@ -318,7 +318,7 @@ if errors.As(err, &rl) { time.Sleep(rl.RetryAfter); /* retry */ }
 if errors.Is(err, ErrUnauthorized) { /* surface 401 */ }
 ```
 
-## 6. Streaming vs Buffered Responses
+## 7. Streaming vs Buffered Responses
 
 If any meaningful subset of implementations produces output incrementally (LLM tokens, log tails, large query results, paginated database reads), the **trait method returns a stream**, not a collected `Vec<T>`. A buffered shape forces all implementations to the worst-case latency profile (time-to-first-byte equals time-to-last-byte), prevents mid-stream cancellation, and inflates memory proportional to output size.
 
@@ -357,7 +357,7 @@ pub fn buffered(id: Uuid, text: String) -> BoxStream<'static, Result<Event, Clie
 
 **General principle.** When tempted to ship two versions of an API ("simple" and "powerful"), ask: can the simple version be expressed as a trivial wrapper over the powerful one? If yes → ship only the powerful one plus a helper. If no → you probably have two genuinely different use cases, but be suspicious.
 
-## 7. Cancellation & Deadlines
+## 8. Cancellation & Deadlines
 
 Any long-running call must propagate cancellation and a deadline from the caller. Otherwise disconnected clients burn compute and money indefinitely (an LLM keeps generating tokens nobody will read), and slow implementations cause cascading timeouts because nothing upstream can signal "give up."
 
@@ -373,7 +373,7 @@ Implementations use `tokio::select!` on `ctx.cancel.cancelled()` and abort upstr
 
 **Go:** standard `context.Context` as the **first parameter** of every I/O-bound public function, always. Respect `ctx.Done()` and `ctx.Deadline()`.
 
-## 8. Observability Hooks
+## 9. Observability Hooks
 
 Every call context carries correlation IDs. Retrofitting observability is one of the most thankless tasks in engineering — adding `request_id` to a context in version 0.1 is trivial, adding it in version 3.0 after a hundred consumers exist is a coordinated cross-team migration.
 
