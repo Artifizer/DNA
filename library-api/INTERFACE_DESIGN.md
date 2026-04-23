@@ -102,11 +102,13 @@ There are **two valid strategies**. Pick one per type, and **document that choic
 
 The library's choice directly constrains consumers. Under Strategy A, consumers **cannot** write an exhaustive match; the catch-all is mandatory. Under Strategy B, consumers get a compile break on upgrade, but they can still choose to add a `_` arm themselves if they want defensive behavior. Make this choice per type, not as a blanket rule for the whole library.
 
-When you later add `Starting`, this match fails to compile — in *your* code. That is exactly where the decision ("should traffic be routed to a warming-up service?") must be made. Consumers that never produce `Starting` are unaffected; they keep returning the variants they already used.
+For example, suppose you publish `pub enum HealthStatus { Healthy, Degraded, Unhealthy }` and the routing decision lives in your own code: `LoadBalancer::should_route(&self, status: HealthStatus) -> bool`, with `Healthy => true` and `Degraded | Unhealthy => false`.
 
-If you had marked `HealthStatus` `#[non_exhaustive]`, your own match would have needed a `_ => false` arm. Then `Starting` would silently fall into that arm, and the compiler could no longer remind you that a real routing decision was missing. That is strictly worse when *you own the matcher*.
+When you later add `Starting`, that match fails to compile — in *your* code. That is exactly where the decision ("should traffic be routed to a warming-up service?") must be made. Consumers that never produce `Starting` are unaffected; they keep returning the variants they already used.
 
-**Rule of thumb:** point the compile-time break at the party who must make the decision. `#[non_exhaustive]` protects *other people's* builds; leave a type exhaustive when *you* want the compiler to force the decision back onto your own code.
+If you had instead marked `HealthStatus` `#[non_exhaustive]`, downstream code could not write an exhaustive match, and your own matcher would also have needed a `_ => false` arm. Then `Starting` would silently fall into that arm, and the compiler could no longer remind you that a real routing decision was missing. That is strictly worse when *you own the matcher*.
+
+**Rule of thumb:** point the compile-time break at the party who must make the decision. `#[non_exhaustive]` protects *other people's* builds from future enum growth; leave a type exhaustive when *you* want the compiler to force the decision back onto your own code.
 
 In **Go**, the trade-off is the same, but the mechanism is weaker: there is no `#[non_exhaustive]`, and the compiler does not check `switch` exhaustiveness for enum-like constants by default. That means library-produced values behave like Rust's forward-compatible mode unless consumers opt into tooling such as `exhaustive` via `golangci-lint`. When the library itself owns the `switch`, enable that tooling in your own CI so newly added constants cannot go unhandled silently.
 
@@ -270,6 +272,7 @@ An error type is part of the public contract, so design it as deliberately as th
 **Rust (with `thiserror`):**
 ```rust
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ClientError {
     #[error("transient: {message}")]
     Transient {
@@ -291,7 +294,7 @@ pub enum ClientError {
 }
 ```
 
-Note: this type is **not** `#[non_exhaustive]`. The consumer that matches on it is your own library (see §2). When you add a variant, you *want* your match to break at compile time.
+Note: this type **is** `#[non_exhaustive]` because it is a **§2 Case 2** type: the library produces it and external consumers match on it. That makes this a **Strategy A** choice from §2. Downstream code must include a fallback arm for unknown future variants so additive releases do not break consumer builds.
 
 **Go** — sentinel + typed errors, checked via `errors.Is` / `errors.As`, never by string-comparing `err.Error()`:
 ```go
