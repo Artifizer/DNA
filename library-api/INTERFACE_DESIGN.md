@@ -412,7 +412,7 @@ The host can then validate config against the implementation's schema at initial
 ## 12. Numbers, Bools, Enums
 
 - **Prefer non-negative types for counts / indices** that cannot be negative (`u32`, `usize`, `uint32`, etc.), but do not force unsigned integers blindly. If the value participates in subtraction, sentinel values, or FFI boundaries where signed math is simpler, a signed type with validation may be clearer. The goal is semantic clarity, not unsignedness for its own sake.
-- **Avoid ≥3 bools on a public struct.** Three bools encode `2^3 = 8` states, most of which are nonsense, and they cannot express "failed mid-stream" — a `Complete=false` message that also failed is neither "complete" nor "incomplete" in any useful sense. Replace with an enum for status plus a small struct for orthogonal flags:
+- **Avoid ≥3 bools on a public struct when they model state.** Three bools encode `2^3 = 8` states, most of which are nonsense, and they cannot express "failed mid-stream" — a `Complete=false` message that also failed is neither "complete" nor "incomplete" in any useful sense. Replace with an enum for status plus a small struct for orthogonal flags. Deliberate flag bags are a valid exception when the fields are truly independent toggles (for example, CLI or feature flags):
   ```rust
   pub enum MessageStatus { Streaming, Complete, Failed }
   pub struct MessageVisibility { pub user: bool, pub backend: bool }
@@ -424,6 +424,7 @@ The host can then validate config against the implementation's schema at initial
 ## 13. Ownership & Allocation
 
 - **Avoid deep `Clone` on hot paths.** Passing `Vec<Message>` by value copies history on every call; prefer `Arc<[Message]>` (cheap clone, identical read ergonomics) or a slice reference. For long-lived sessions, the difference is the gap between O(1) and O(n) per invocation.
+- **Prefer borrowed/reference forms when you only read.** Accept `&T`, `&str`, slices, or iterators over references where possible instead of forcing callers to materialize owned containers or strings just to cross the API boundary.
 - **Let the caller decide where to copy and place data** (Rust API Guidelines: **C-CALLER-CONTROL**). Accept `&str` rather than `String` when you only read; accept `impl Into<String>` when you store; do not force copies the caller did not ask for.
 - **Document ownership.** Say whether a callback receives a borrowed or owned value, whether it may outlive the call, and whether `Send + Sync` bounds apply.
 - **Types are `Send + Sync` where possible** (Rust API Guidelines: **C-SEND-SYNC**). Async runtimes (`tokio`, `async-std`) require `Send`; not implementing it gratuitously locks consumers out of multi-threaded executors.
@@ -556,7 +557,7 @@ println!("{}", response.id());
 
 If the library is consumed by non-host languages (wire protocol, webhooks, WASM, cgo, gRPC), the README states this explicitly and links to the wire-protocol document. Otherwise external authors find the crate and are confused about whether they can use it directly or must go through the wire contract.
 
-- **Wire types avoid language-specific niceties.** No Rust `Duration` on the wire — use ISO-8601 or integer milliseconds with units in the field name (`timeout_ms`). No Go `time.Time` with `time.Local` — always UTC with explicit timezone.
+- **Wire contracts use language-neutral representations even if host languages expose richer time/date types.** On the wire, durations should be encoded as documented strings or integers with units in the field name (for example, ISO-8601 duration strings or `timeout_ms`), and timestamps should carry an explicit timezone/offset or be normalized to UTC. In-memory Rust or Go APIs may still use `Duration`, `time::OffsetDateTime`, `chrono` types, or `time.Time` as appropriate at the language boundary.
 - **Enum values serialize as stable strings**, never numeric discriminants. A numeric discriminant becomes a wire break the first time you reorder the enum.
 - **Document the stability tier separately** for the in-process API and the wire API — they evolve at different rates. In-process may break at 2.0; wire contracts usually cannot.
 
@@ -637,7 +638,7 @@ Use before publishing any new public item or a new library version. This is inte
 - [ ] Every public item has a doc comment explaining *what*, *why*, and *when*.
 - [ ] No raw `String` where an enum or validated newtype fits; no ambiguous numeric type where units or sign matter; no `bool` where an enum fits.
 - [ ] Domain IDs are newtypes, not raw strings or UUIDs.
-- [ ] No ≥3 `bool` fields on a public struct; state is an enum.
+- [ ] No ≥3 `bool` fields on a public struct when those fields model state; use an enum instead. Independent flag-holder structs are acceptable when the flags are genuinely orthogonal.
 - [ ] Misuse-resistant shapes considered: builders, phase types, capability handles, or narrower interfaces where sequencing/permissions matter.
 - [ ] Wire casing is uniform across all serialized types.
 
