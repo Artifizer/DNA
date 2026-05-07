@@ -185,7 +185,7 @@ Plan for growth in:
 
 ## PLID-20.02 Closed vs Open Taxonomies (CRIT)
 
-Consumers need to know whether exhaustive matching is safe, risky, or explicitly unsupported.Classify each enum-like set intentionally as either closed or open.
+Consumers need to know whether exhaustive matching is safe, risky, or explicitly unsupported. Classify each enum-like set intentionally as either closed or open.
 
 - A **closed taxonomy** is finite by semantics and safe for exhaustive handling.
 - An **open taxonomy** is expected to grow and must be designed for forward compatibility.
