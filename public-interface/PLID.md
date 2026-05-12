@@ -1,4 +1,4 @@
-# Public Library Interface Design Requirements (PLID)
+# Public Library Interface Design (PLID) Requirements
 
 ## Overview
 
@@ -7,6 +7,18 @@ A general-purpose, language-agnostic, actionable, LLM-friendly playbook for auto
 This guide treats public interfaces as long-term contracts, not temporary implementation details.
 
 When building an internal application, you can refactor quickly because you control all callers. When publishing a library, every exported symbol may be copied into dozens of downstream codebases. Decisions become expensive to reverse. This document provides a practical checklist that can be applied to any programming language or framework, and it can serve as a skeleton for language-specific or framework-specific guides.
+
+## Core Principles
+
+A short list of guiding ideas the rest of this document elaborates. Every requirement below traces back to one or more of these.
+
+- **APIs should be easy to use and hard to misuse.** *(Joshua Bloch)*
+- **Public surface is a long-term contract.** Be intentional about what is exported; when in doubt, leave it out *(Joshua Bloch)*.
+- **Encode meaning in types, not comments.** A well-typed interface fails at compile time; a well-commented one fails in production.
+- **Safe by default.** Defaults should be operationally sane; dangerous actions must be explicit.
+- **Errors are first-class interface surface.** Make them actionable and structured, not opaque.
+- **Documentation and examples are part of the contract.** Consumers copy examples verbatim and read item-level docs more often than they read source; treat both with the same discipline as code.
+- **Conform to the ecosystem.** Familiar conventions beat clever novelty.
 
 ## Table of Contents
 
@@ -38,8 +50,8 @@ When building an internal application, you can refactor quickly because you cont
   - [PLID-55 State Mutation & Side Effects](#plid-55-state-mutation--side-effects)
   - [PLID-56 Data Lifecycle & Retention](#plid-56-data-lifecycle--retention)
 
-- [Minimal Release Checklist](#minimal-reviewapproval-checklist)
-- [Core Principle](#core-principle)
+- [Minimal Review/Approval Checklist](#minimal-reviewapproval-checklist)
+- [References](#references)
 
 
 # PLID-10 Public Contract Definition & Stability
@@ -56,22 +68,25 @@ This includes:
 
 - exported functions, methods, constructors, and types
 - interfaces, traits, protocols, callbacks, and extension points
-- configuration schemas, environment variables, CLI flags, and feature flags
-- error types, error codes, exit codes, and status values
+- configuration schemas, environment variables, and feature flags
+- error types, error codes, and status values
 - serialized payloads, schema fields, event shapes, and wire names
 - documented behavior, examples, and migration guides
+
+Libraries should read environment variables only when following a well-known ecosystem convention (proxy settings, OpenTelemetry endpoints, log filters); arbitrary env-driven configuration belongs to the application layer, not the library.
+
+If the library ships a companion CLI or daemon, treat its surface (flags, exit codes, signal handling) as a separate contract with its own stability declarations.
 
 ## PLID-10.02 Stability Declaration (CRIT)
 
 Consumers need to understand adoption risk before depending on a feature. Every public feature must declare its stability tier.
 
-Typical tiers include:
+Tiers:
 
-- stable
-- preview
-- experimental
-- deprecated
-- internal or unsupported
+- **stable** — production-ready; backward compatibility guaranteed until the next major version.
+- **preview** — feature is stabilizing; breaking changes possible but unlikely before promotion to stable.
+- **experimental** — no compatibility promise; may be reshaped or removed at any minor release.
+- **deprecated** — discouraged; scheduled for removal in the next major version; migration path documented.
 
 ## PLID-10.03 Compatibility Dimensions (CRIT)
 
@@ -93,6 +108,12 @@ Your stability is constrained by every external contract you leak into your own 
 ## PLID-10.05 Contract Examples as Contract Surface (MAJOR)
 
 Consumers often copy examples verbatim and then rely on that usage pattern for years. Treat official examples and quick starts as public contract, not marketing material.
+
+## PLID-10.06 Minimize Public Surface (MAJOR)
+
+Every exported symbol is a long-term support obligation. Adding a public item is a one-line change; removing it requires a major version bump, a migration guide, and downstream churn. This asymmetry is the dominant cost driver in library evolution.
+
+Default to keeping types, functions, and modules private until there is a concrete consumer need to expose them. When unsure whether something should be public — leave it out *(Joshua Bloch)*. You can always add it later; you can rarely take it back.
 
 
 # PLID-11 Meaningful Types & Misuse-Resistant Modeling
@@ -122,12 +143,12 @@ Consumers should not need to reverse-engineer which combinations are forbidden. 
 
 Unit and precision bugs are common, expensive, and hard to notice in review. If a number represents time, size, rate, money, quantity, distance, or precision-sensitive data, the unit and interpretation must be explicit.
 
-Use:
+Use, in order of preference:
 
-- unit-bearing names
-- unit-specific types
-- duration or decimal abstractions where appropriate
-- explicit overflow or rounding rules
+- built-in or stdlib types where they exist (e.g., `time.Duration`/`time.Time` in Go, `std::time::Duration`/`chrono::DateTime` in Rust, `TimeSpan`/`DateTime`/`decimal` in .NET, `decimal.Decimal` in Python) — do not invent parallel types when the ecosystem already has a canonical one
+- domain-specific wrapper types when no canonical stdlib type fits (e.g., `Money`, `Bytes`, `RequestsPerSecond`)
+- unit-bearing names (e.g., `timeoutMs`, `sizeBytes`) as a fallback when a wrapper type is impractical
+- explicit overflow, precision, and rounding rules documented at the boundary
 
 ## PLID-11.05 Replace Boolean Flags with Modes (MAJOR)
 
@@ -164,6 +185,12 @@ Examples:
 ## PLID-12.02 Principle of Least Surprise (CRIT)
 
 Public APIs should behave how experienced users expect in that ecosystem unless there is a strong reason not to.
+
+## PLID-12.03 Single Purpose / Cohesion (MAJOR)
+
+An API should do one thing, and do it well *(Joshua Bloch)*. A library whose purpose can be stated in a single sentence is easier to learn, easier to evolve, and easier to replace. When a module accumulates unrelated capabilities, every consumer pays for the parts they do not use, and every refactor risks breaking an unrelated client.
+
+If you cannot describe what the interface is for in one sentence — split it. Two narrow, cohesive libraries beat one broad, vague one.
 
 
 # PLID-20 Evolvability & Future Change
@@ -212,6 +239,12 @@ Examples include:
 - interface or protocol implementations
 - plugin mechanisms
 - user-defined schema fragments
+
+## PLID-20.06 Keep Implementation Freedom (MAJOR)
+
+Public APIs should expose what consumers must rely on — and no more. Over-specifying behavior in types, signatures, or documentation locks the implementation: tomorrow's optimization, cache layer, retry strategy, or replacement backend becomes a breaking change. *"Keep APIs free of implementation details. They confuse users and inhibit the flexibility to evolve."* — Joshua Bloch.
+
+Document the guarantees consumers can build on (see PLID-42.03), and explicitly mark behaviors that are *not* part of the contract (ordering of debug fields, internal cache TTLs, exact retry counts, log message wording). When in doubt, under-specify rather than over-specify.
 
 
 # PLID-21 Governance, Versioning & Release Discipline
@@ -362,6 +395,14 @@ Library authors write the API once; consumers read it repeatedly for years. Opti
 
 Predictable interfaces are easier to learn, search, and debug. Prefer familiar conventions over novelty unless a new shape clearly improves safety or correctness.
 
+Consult and follow language-specific API guidelines where they exist — for example, the Rust API Guidelines, the .NET Framework Design Guidelines, and Python's PEP 387 (Backwards Compatibility Policy). See *References* below.
+
+## PLID-40.06 Eliminate Caller-Side Boilerplate (MAJOR)
+
+If every consumer writes the same wrapping, conversion, retry, or cleanup boilerplate around your API, that boilerplate is a design failure of the library — not a fact of life for the user. *"A class should do one thing well and the user should not need to do anything the class could do for them."* — Joshua Bloch.
+
+Treat repetitive consumer code seen in examples, tests, or downstream repos as a signal to reshape the interface.
+
 
 # PLID-41 Validation, Safe Defaults & Construction
 
@@ -373,7 +414,7 @@ Configuration errors should fail at load time or initialization time, not during
 
 ## PLID-41.02 Boundary Validation on Entry (CRIT)
 
-A fast, precise failure near the boundary is better than a confusing failure deep inside the system. Validate public inputs as early as possible.
+A fast, precise failure near the boundary — a "fail-fast" boundary — is better than a confusing failure deep inside the system. Validate public inputs as early as possible.
 
 ## PLID-41.03 Safe Defaults (MAJOR)
 
@@ -409,9 +450,11 @@ Examples:
 - return owned values only when ownership is genuinely produced; otherwise allow zero-copy or shared access
 - avoid hidden global allocators, thread pools, or singletons when the caller might reasonably want to supply their own
 
-## PLID-41.06 Separate Common & Expert Configuration (MINOR)
+## PLID-41.06 Single Configuration with Sane Defaults (MINOR)
 
-Most consumers should not pay the complexity cost of rare edge cases. Keep everyday configuration small and advanced knobs explicit.
+Prefer one configuration model with reasonable defaults over splitting configuration into multiple tiers (e.g., "common" vs "expert"). Two configuration surfaces are hard to maintain, the boundary between them is subjective, and "advanced" sections tend to accumulate everything the team did not want to highlight.
+
+Use per-field markers (e.g., `@advanced`, `@unstable`, doc comments) to flag knobs that should be touched only deliberately, while keeping all configuration in one place.
 
 
 # PLID-42 Documentation as Product
@@ -422,8 +465,9 @@ Documentation is part of the interface, not an optional afterthought.
 
 Consumers need a single place to understand what the library is, what it is not, and how the pieces fit together. Without it, adoption starts from searching scattered symbols.
 
-The top-level entry documentation (package, module root, or equivalent landing page) should include:
+The top-level entry documentation should include:
 
+- a single canonical landing page — typically a `README.md` for the repo/registry, plus language-native root documentation (`lib.rs` doc comments in Rust, `doc.go` in Go, module-level docstrings in Python)
 - a one-paragraph statement of purpose and scope
 - the canonical quick-start example
 - a map of primary types and their relationships
@@ -452,9 +496,13 @@ Document behavioral guarantees that consumers may rely on. Undocumented behavior
 - performance-sensitive behavior
 - compatibility and stability tier
 
-## PLID-42.04 Runnable Examples (MAJOR)
+## PLID-42.04 Runnable & Verified Examples (MAJOR)
 
-Examples should be runnable, compile-checked, or automatically validated where tooling allows. Many consumers learn the interface by copying the first working example. Provide examples for:
+Examples must serve two audiences at once: a consumer who copies the first working snippet and a maintainer who must keep the contract and the documentation from drifting apart. Therefore examples should both be **runnable** by the user out of the box and **verified automatically in CI** as part of the public contract.
+
+Where the ecosystem provides a built-in mechanism, use it: Rust doctests, Go testable examples, Python doctest or Sphinx doctest, .NET `<example>` blocks paired with xUnit tests. When the language has no such mechanism, place examples in dedicated source files that the test suite builds and runs. Broken examples are usually the first sign that the public contract and documentation have diverged.
+
+Provide examples for:
 
 - quick start
 - common workflow
@@ -482,11 +530,7 @@ An undocumented implementation detail can change safely; a published guarantee c
 
 Compatibility promises are only real if they are exercised continuously. Verify compatibility claims with fixtures, upgrade tests, old payload tests, or consumer-style integration checks.
 
-## PLID-43.03 Example Verification (MAJOR)
-
-Documentation examples should compile, run, or be checked automatically when tooling allows. Broken examples are often the first sign that the public contract and documentation have diverged.
-
-## PLID-43.04 Consumer Test Support (MAJOR)
+## PLID-43.03 Consumer Test Support (MAJOR)
 
 Provide builders, fakes, fixtures, or test-support packages for common downstream testing needs when the ecosystem supports it. Without shared test support, every consumer reimplements similar scaffolding and drifts.
 
@@ -497,7 +541,7 @@ Errors are first-class interface surface and must be designed deliberately.
 
 ## PLID-50.01 Actionable Error Taxonomy (CRIT)
 
-One opaque failure type forces consumers to guess and often handle errors incorrectly.Consumers must be able to distinguish failures that require different handling.
+One opaque failure type forces consumers to guess and often handle errors incorrectly. Consumers must be able to distinguish failures that require different handling.
 
 Typical distinctions include:
 
@@ -777,6 +821,11 @@ Consumers need to know whether writes are immediately observable.
 - safe defaults are sane, least-privilege is preserved, and dangerous operations are explicit
 - wire contracts remain stable where promised
 
-# Core Principle
+# References
 
-Every public symbol is easy to publish and expensive to support. Design accordingly.
+- Joshua Bloch — *How to Design a Good API and Why It Matters* ([PDF](https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/32713.pdf), [InfoQ article](https://www.infoq.com/articles/API-Design-Joshua-Bloch/))
+- Rust API Guidelines — <https://rust-lang.github.io/api-guidelines/about.html>
+- Elegant APIs in Rust (Pascal Hertleif) — <https://deterministic.space/elegant-apis-in-rust.html>
+- .NET Framework Design Guidelines — <https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/>
+- PEP 387 — Backwards Compatibility Policy (Python) — <https://peps.python.org/pep-0387/>
+- Fail-fast systems — <https://en.wikipedia.org/wiki/Fail-fast_system>
